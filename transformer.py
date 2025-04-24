@@ -87,27 +87,200 @@ class Dataset:
     def decode(self, l):
         """Decodes a list of integers back into a string."""
         return ''.join([self.itos[i] for i in l])
+    
 
-# Example usage (optional, can be removed later)
+class PositionalEncoding:
+    def __init__(self, d_model, max_len=5000):
+        self.d_model = d_model
+        self.max_len = max_len
+
+    def __call__(self, x):
+        pe = np.zeros((self.max_len, self.d_model))
+        for pos in range(self.max_len):
+            for i in range(self.d_model):
+                if i % 2 == 0:
+                    pe[pos, i] = np.sin(pos / (10000 ** (i / self.d_model)))
+                else:
+                    pe[pos, i] = np.cos(pos / (10000 ** ((i - 1) / self.d_model)))
+        return pe
+
+class ScaledDotProductAttention:
+    def __init__(self, d_model):
+        self.d_model = d_model
+
+    def __call__(self, q, k, v):
+        d_k = q.shape[-1]
+        scores = np.matmul(q, k.transpose(-2, -1)) / np.sqrt(d_k)
+        scores = np.softmax(scores, axis=-1)
+        out = np.matmul(scores, v)
+        return out
+
+class FeedForward:
+    def __init__(self, d_model, d_ff):
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.w1 = np.random.randn(d_model, d_ff)
+        self.b1 = np.random.randn(d_ff)
+        self.w2 = np.random.randn(d_ff, d_model)
+        self.b2 = np.random.randn(d_model)
+
+    def __call__(self, x):
+        x = x @ self.w1 + self.b1
+        x = x @ self.w2 + self.b2
+        return x
+
+class MultiHeadAttention:
+    def __init__(self, d_model, n_heads):
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.q_proj = Transformer.FeedForward(d_model, d_model)
+        self.k_proj = Transformer.FeedForward(d_model, d_model)
+        self.v_proj = Transformer.FeedForward(d_model, d_model)
+        self.out_proj = Transformer.FeedForward(d_model, d_model)
+
+    def __call__(self, q, k, v):
+        batch_size = q.shape[0]
+        q = self.q_proj(q)
+        k = self.k_proj(k)
+        v = self.v_proj(v)
+        q = q.reshape(batch_size, -1, self.n_heads, self.head_dim)
+        k = k.reshape(batch_size, -1, self.n_heads, self.head_dim)
+        v = v.reshape(batch_size, -1, self.n_heads, self.head_dim)
+        q = q.transpose(0, 2, 1, 3)
+        k = k.transpose(0, 2, 1, 3)
+        v = v.transpose(0, 2, 1, 3)
+        attention = Transformer.ScaledDotProductAttention(self.d_model)(q, k, v)
+        attention = attention.transpose(0, 2, 1, 3).reshape(batch_size, -1, self.d_model)
+        return self.out_proj(attention)
+
+    def __init__(self, vocab_size, block_size, n_heads, n_blocks, dropout):
+        self.vocab_size = vocab_size
+        self.block_size = block_size
+        self.n_heads = n_heads
+        self.n_blocks = n_blocks
+        self.dropout = dropout
+        # ... initialize layers as needed ...
+
+    def forward(self, x):
+        """
+        Forward pass of the Transformer model.
+        """
+        x = Transformer.PositionalEncoding(self.d_model)(x)
+        for _ in range(self.n_blocks):
+            x = Transformer.EncoderBlock(self.d_model, self.n_heads)(x)
+        return x
+
+class LayerNorm:
+    def __init__(self, d_model):
+        self.d_model = d_model
+        self.scale = np.ones(d_model)
+        self.shift = np.zeros(d_model)
+
+    def __call__(self, x):
+        return self.scale * (x - x.mean(axis=-1, keepdims=True)) / (x.std(axis=-1, keepdims=True) + 1e-5) + self.shift
+
+class EncoderBlock:
+    def __init__(self, d_model, n_heads):
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.ln1 = LayerNorm(d_model)
+        self.mha = MultiHeadAttention(d_model, n_heads)
+        self.ln2 = LayerNorm(d_model)
+        self.ff = FeedForward(d_model, d_model)
+
+    def __call__(self, x):
+        x = self.ln1(x)
+        x = self.mha(x, x, x)
+        x = self.ln2(x)
+        x = self.ff(x)
+        return x
+    
+class DecoderBlock:
+    def __init__(self, d_model, n_heads):
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.ln1 = LayerNorm(d_model)
+        self.mha = MultiHeadAttention(d_model, n_heads)
+        self.ln2 = LayerNorm(d_model)
+        self.ff = FeedForward(d_model, d_model)
+
+    def __call__(self, x):
+        x = self.ln1(x)
+        x = self.mha(x, x, x)
+        x = self.ln2(x)
+        x = self.ff(x)
+        return x
+    
+class Transformer:
+    def __init__(self, vocab_size, block_size, n_heads, n_blocks, dropout):
+        self.vocab_size = vocab_size
+        self.block_size = block_size
+        self.n_heads = n_heads
+        self.n_blocks = n_blocks
+        self.dropout = dropout
+
+    def forward(self, x):
+        x = Transformer.PositionalEncoding(self.d_model)(x)
+        for _ in range(self.n_blocks):
+            x = Transformer.EncoderBlock(self.d_model, self.n_heads)(x)
+        return x
+    
+    def backward(self, x, y):
+        logits = self.forward(x)
+        loss = np.mean(np.log(logits[np.arange(len(y)), y]))
+        return loss
+    
+    def update(self):
+        """
+        Updates the model parameters using gradient descent.
+        """
+        self.w1 -= self.lr * self.w1_grad
+        self.b1 -= self.lr * self.b1_grad
+        self.w2 -= self.lr * self.w2_grad
+        self.b2 -= self.lr * self.b2_grad
+    
+    def loss(self, x, y):
+        logits = self.forward(x)
+        loss = np.mean(np.log(logits[np.arange(len(y)), y]))
+        return loss
+    
+    def generate(self, context, max_new_tokens):
+        x = np.array(context)
+        for _ in range(max_new_tokens):
+            logits = self.forward(x)
+            next_char = np.argmax(logits[-1])
+            x = np.concatenate([x, [next_char]], axis=0)
+        return x
+    
+
+
+
 if __name__ == '__main__':
     dataset = Dataset()
-    print(f"First 100 characters encoded: {dataset.data[:100]}")
-    print(f"Decoded: {dataset.decode(dataset.data[:100].tolist())}")
+    transformer = Transformer(dataset.vocab_size, dataset.block_size, 4, 3, 0.1)
+    xb, yb = dataset.get_batch(4, 8)
+    print(transformer.forward(xb))
+    print(transformer.loss(xb, yb))
+    print(transformer.generate("hello", 10))
+    print(transformer.forward(xb))
+    print(transformer.loss(xb, yb))
+    print(transformer.generate("hello", 10))
+    print(transformer.forward(xb))
+    print(transformer.loss(xb, yb))
+    print(transformer.generate("hello", 10))
+    
+    # Training loop
+    for i in range(1000):
+        xb, yb = dataset.get_batch(4, 8)
+        loss = transformer.loss(xb, yb)
+        print(loss)
+        transformer.backward(xb, yb)
+        transformer.update()
 
-    batch_size = 4
-    block_size = 8
-    xb, yb = dataset.get_batch(batch_size, block_size)
-    print("\n--- Example Batch ---")
-    print("Inputs (xb):")
-    print(xb)
-    print("Targets (yb):")
-    print(yb)
+        if i % 100 == 0:
+            print(transformer.generate("hello", 10))
+            print("-"*100)
 
-    for b in range(batch_size): # iterate through batch dimension
-        print(f"\nBatch item {b+1}:")
-        context = xb[b]
-        target = yb[b]
-        print(f"Input context: {dataset.decode(context.tolist())}")
-        print(f"Target chars:  {dataset.decode(target.tolist())}")
-
+    print(transformer.generate("hello", 100))
 

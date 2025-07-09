@@ -6,6 +6,8 @@ What I have been realizing is that there is more than just attention. There is m
 
 Key papers:
 
+> **📄 PDF Versions Available**: All papers have been converted to PDF format and are available in the [`pdfs/`](pdfs/) directory for offline reading.
+
 ## Foundational Papers:
 1. **[Attention Is All You Need](papers/attention_is_all_you_need.md)** (Vaswani et al., 2017) - The original transformer paper
 2. **[BERT: Pre-training of Deep Bidirectional Transformers](papers/bert.md)** (Devlin et al., 2018) - Bidirectional transformers
